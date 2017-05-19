@@ -1,0 +1,18 @@
+//
+//  JGAddSchedulePlanVController.h
+//  HealthConsultant
+//
+//  Created by 单启志 on 2017/2/17.
+//  Copyright © 2017年 JG. All rights reserved.
+//
+
+#import <UIKit/UIKit.h>
+
+#import "JGZuoXiCellSubModel.h"
+
+
+@interface JGAddSchedulePlanVController : UIViewController
+
+@property(nonatomic,strong)JGZuoXiCellSubModel *model;
+
+@end

@@ -1,0 +1,17 @@
+//
+//  JGZuoXiPlanCellSubView.h
+//  haha
+//
+//  Created by faqiang feng on 2017/2/18.
+//  Copyright © 2017年 faqiang feng. All rights reserved.
+//
+
+#import <UIKit/UIKit.h>
+#import "JGZuoXiCellSubModel.h"
+
+@interface JGZuoXiPlanCellSubView : UIView
+
+@property(nonatomic,copy)JGZuoXiCellSubModel *model;
+@property(nonatomic,copy)void(^btnClickBlock)();
+
+@end

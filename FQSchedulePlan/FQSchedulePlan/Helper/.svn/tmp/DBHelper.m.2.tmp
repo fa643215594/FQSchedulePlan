@@ -1,0 +1,444 @@
+
+//
+//  Created by 单启志 on 2017/3/8.
+//  Copyright © 2017年 MRH. All rights reserved.
+//
+
+#import "DBHelper.h"
+
+#import "FMDatabase.h"
+#import "FMDatabaseQueue.h"
+#import "FMDatabaseAdditions.h"
+#import "HttpHelper.h"
+
+//数据库
+//#define FQDBName @"/watchFQ.db"
+
+//数据库保证每一个userId都创建一个数据库
+#define FQDBName [[@"/watchFQ"stringByAppendingString:my_id]stringByAppendingString:@" .db"]
+//表名
+#define tableName @"watch"
+
+//#define tableName [@"watch" stringByAppendingString:my_id]
+
+@interface DBHelper()
+
+@property(nonatomic,strong)FMDatabase *db;
+@property(nonatomic,strong)FMDatabaseQueue *queue;
+
+@end
+
+@implementation DBHelper
+
+
++(instancetype)share{
+    static DBHelper *dbHelper;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        dbHelper=[[self alloc]init];
+    });
+    return dbHelper;
+}
+
+-(FMDatabaseQueue *)queue{
+
+    NSString *dbName=@"/watchFQ";
+    if ([my_id isEqualToString:@""]||my_id==nil) {
+
+    }else{
+        dbName=[[@"/watchFQ"stringByAppendingString:my_id]stringByAppendingString:@" .db"];
+    }
+    NSString *doc=[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)lastObject];
+    NSString *path;
+<<<<<<< .mine
+    if (dbName) {
+=======
+    
+    if (FQDBName) {
+>>>>>>> .r247
+        NSLog(@"www=%@",FQDBName);
+        path=[doc stringByAppendingString:FQDBName];
+    }
+
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    //判断文件是否已经在沙盒中已经存在
+    BOOL result = [fileManager fileExistsAtPath:path];
+
+    if (!_queue||!result) {
+
+        NSLog(@"%@",path);
+        _queue=[FMDatabaseQueue databaseQueueWithPath:path];
+
+        [_queue inDatabase:^(FMDatabase *db) {
+
+            //NSString *tName=[tableName stringByAppendingString:my_id];
+            NSString *sql=[NSString stringWithFormat:@"create table if not exists %@ (id integer primary key autoincrement,%@ text,%@ text,%@ text,%@ text,%@ text,%@ text)",tableName,DBDeviceId,DBZuoXiPlan,DBWatchFee,DBWatchBook,DBMessageLog,DBHealthStep];
+            BOOL createTableResult=[db executeUpdate:sql];
+            if (createTableResult) {
+                NSLog(@"创建表成功");
+            }else{
+                NSLog(@"创建表失败");
+            }
+        }];
+    }
+    return _queue;
+}
+
+//
+
+/**
+ 往表中中插入一列
+ @param columnName 表的字段名
+ */
+-(void)addColumnToWatchTableWith:(NSString*)columnName{
+
+
+    [self.queue inDatabase:^(FMDatabase *db) {
+
+       BOOL isExists=[db columnExists:columnName inTableWithName:tableName];
+        if (!isExists) {
+
+            NSString *sql=[NSString stringWithFormat:@"alter table %@ add %@ text",tableName,columnName];
+            BOOL isSuccess=[db executeUpdate:sql];
+            if (isSuccess) {
+                NSLog(@"插入字段成功");
+            }else{
+                NSLog(@"插入字段失败");
+            }
+        }else{
+
+            NSLog(@"该字段已存在");
+        }
+
+    }];
+
+}
+
+//初始化表(清空表里面的所有数据)
+-(void)initTable{
+
+    [self.queue inDatabase:^(FMDatabase *db) {
+
+       BOOL isclear=[db executeUpdate:@"drop table if exists watch"];
+
+        NSString *sql=[NSString stringWithFormat:@"create table if not exists %@ (id integer primary key autoincrement,%@ text,%@ text,%@ text,%@ text,%@ text,%@ text)",tableName,DBDeviceId,DBZuoXiPlan,DBWatchFee,DBWatchBook,DBMessageLog,DBHealthStep];
+       BOOL iscreate=[db executeUpdate:sql];
+        if (isclear && iscreate) {
+            NSLog(@"初始化表成功");
+        }else{
+
+            NSLog(@"初始化表失败");
+        }
+
+    }];
+}
+
+
+/**
+ 插入（只有在新增设备的时候是插入一条数据，其余情况下全是update）
+
+ @param deviceId 设备Id
+ */
+-(void)insertDataWithDeviceId:(NSString*)deviceId{
+
+    [self.queue inDatabase:^(FMDatabase *db) {
+
+      FMResultSet *result=[db executeQuery:@"select count(*) from watch where deviceId=?",deviceId];
+
+        if ([result next]) {
+          NSInteger count=[result intForColumnIndex:0];
+
+            if (count>0) {
+                NSLog(@"该设备已存在");
+                return;
+            }
+        }
+
+      BOOL isSuccess=[db executeUpdate:@"insert into watch(deviceId)values(?)",deviceId];
+
+        if (isSuccess) {
+            NSLog(@"插入字段成功");
+        }else{
+            NSLog(@"插入字段失败");
+        }
+    }];
+
+}
+
+/**
+ 删除掉某个设备
+
+ @param deviceId 设备id
+ */
+-(void)deleteWithDeviceId:(NSString*)deviceId{
+
+    [self.queue inDatabase:^(FMDatabase *db) {
+
+       BOOL isSuccess=[db executeUpdate:@"delete from watch where deviceId=?",deviceId];
+        if (isSuccess) {
+            NSLog(@"插入字段成功");
+        }else{
+            NSLog(@"插入字段失败");
+        }
+    }];
+}
+
+/**
+ 查询表对应的数据
+
+ @param columnName 字段名（对应界面的数据）
+ @param deviceId   设备Id
+
+ @return 数组(无值返回空数组)
+ */
+-(NSMutableArray*)getDateWithColumnName:(NSString*)columnName deviceId:(NSString*)deviceId{
+
+    //还没该手表记录的时候插入一条记录，有则不插入
+    [self insertDataWithDeviceId:deviceId];
+     //该表中没有改字段的时候插入columnName字段，有则不插入
+    [self addColumnToWatchTableWith:columnName];
+    
+    __block NSString *str;
+    [self.queue inDatabase:^(FMDatabase *db) {
+        FMResultSet *result=[db executeQuery:@"select * from watch where deviceId=?",deviceId];
+
+        if ([result next]) {
+            str=[result stringForColumn:columnName];
+        }
+        //[result close];
+    }];
+
+    if (str) {
+        NSData *data=[str dataUsingEncoding:NSUTF8StringEncoding];
+
+        NSArray *a=[NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:nil];
+        return a.mutableCopy;
+    }else{
+
+        //走网络请求获取数据
+//        NSString *type=[columnName isEqual:DBZuoXiPlan]?@"schedule":@"";
+//       NSMutableArray* arr=[self getDataForHttpWithType:type IMEI:deviceId];
+//        return arr;
+        return [NSMutableArray array];
+    }
+}
+
+/**
+ 最新版增删改 #####五星推荐#####
+
+ @param ID          需要修改的Id 新增传nil
+ @param columnName  哪个字段
+ @param deviceId    设备ID
+ @param editType    0 增 1 删 2 改 3数据库只保留一条数据
+ @param dic         修改后的数据(字典)，删除传nil
+
+ @return Yes成功 No失败
+ */
+-(BOOL)updateDataWithId:(NSString*)ID ColumnName:(NSString*)columnName deviceId:(NSString*)deviceId updateType:(updateType)updateType data:(id)dic{
+
+    //非删除操作 传空 dic 不处理
+    if (updateType!=updateTypeDelete) {
+        if (dic==nil) {
+            return NO;
+        }
+    }
+
+    __block BOOL result;
+
+    //还没该手表记录的时候插入一条记录，有则不插入
+    [self insertDataWithDeviceId:deviceId];
+
+    //该表中没有改字段的时候插入columnName字段，有则不插入
+    [self addColumnToWatchTableWith:columnName];
+
+    __block NSMutableArray *arr=[[DBHelper share]getDateWithColumnName:columnName deviceId:deviceId];
+    [self.queue inDatabase:^(FMDatabase *db) {
+
+        if (updateType==updateTypeAdd) {//增
+            if ([dic isKindOfClass:[NSArray class]]) {
+                //离线过来的数据可能是一个数组
+                NSArray *subArr=dic;
+                for (int i=0; i<subArr.count; i++) {
+                    [arr addObject:dic[i]];
+                }
+            }else{
+                [arr addObject:dic];
+            }
+        }else if (updateType==updateTypeDelete){//删除
+
+            for (int i=0; i<arr.count; i++) {
+                long long dbId=[[arr[i]valueForKey:@"Id"]longLongValue];
+                if ([ID longLongValue]==dbId) {
+                    [arr removeObject:arr[i]];
+                    continue;
+                }
+            }
+
+        }else if (updateType==updateTypeEdit){//改
+
+            __block NSInteger count=arr.count;
+            for ( int i=0; i<count; i++) {
+//                NSDictionary *d= [arr[i] mj_keyValues];
+                
+                  long dbId=[[arr[i]valueForKey:@"Id"]longLongValue];
+               // NSString *dbId=[NSString stringWithFormat:@"%ld",(long)[d valueForKey:@"Id"]];
+                if ([ID longLongValue] ==dbId) {
+                    [arr removeObject:arr[i]];
+                    [arr insertObject:dic atIndex:i];
+                    continue;
+                    //obj=dic;
+                }
+            }
+        }else if (updateType==updateTypeReplace){
+            if ([dic isKindOfClass:[NSDictionary class]]) {
+                NSMutableArray *a=[NSMutableArray arrayWithObject:dic];
+                arr=a;
+            }else{
+                arr=dic;
+            }
+
+        }
+
+        //逻辑操作
+        NSString *sql=[NSString stringWithFormat:@"update watch set %@='%@' where deviceId=%@",columnName,arr.mj_JSONString,deviceId];
+        result=[db executeUpdate:sql];
+        if (result) {
+            NSLog(@"操作成功");
+        }else{
+            NSLog(@"操作失败");
+        }
+    
+        //todo
+    }];
+    
+    return result;
+}
+
+
+
+//网络请求，拿数据存到数据库
+-(void)getDataForHttpWithColumnName:(NSString*)columnName IMEI:(NSString*)IMEI success:(void(^)(NSMutableArray*data))success failure:(void(^)(NSString* errMsg))failure{
+
+    NSString *httpType=[self typeWithColumn:columnName];
+    [HttpHelper postSDKHttpWithType:httpType IMEI:IMEI successBlock:^(NSObject *objRes) {
+        NSDictionary *results=[objRes valueForKey:@"Results"];
+        NSString *dataKey=[results valueForKey:@"Category"];
+        id dic=[results valueForKey:dataKey];
+
+        NSMutableArray *muDic=[NSMutableArray array];
+        if ([dic isKindOfClass:[NSDictionary class]]) {
+            [muDic addObject:dic];
+        }else{
+
+            muDic=((NSArray*)dic).mutableCopy;
+        }
+        NSLog(@"222222-%@",dic);
+        if (muDic) {
+           // NSString *colunmName=[self columnNameWith:type];
+            [[DBHelper share]updateDataWithId:nil ColumnName:columnName deviceId:IMEI updateType:updateTypeReplace data:muDic];
+        }else{
+            NSLog(@"HTTP返回的数据为空");
+        }
+        success(muDic);
+    } failedBlock:^(NSString *errMsg) {
+        failure(@"HTTP请求失败");
+    }];
+
+
+}
+
+//根据type返回cloumnName
+-(NSString *)columnNameWith:(NSString*)type{
+    NSString *columnName;
+    if ([type isEqualToString:@"runtime"]) {
+        columnName=DBHealthStep;
+    }else if ([type isEqualToString:@"schedule"]){
+        columnName=DBZuoXiPlan;
+    }else if ([type isEqualToString:@"Contracts"]){
+        columnName=DBWatchBook;
+    }
+    return columnName;
+}
+
+//根据字段返回type
+-(NSString *)typeWithColumn:(NSString *)cloumn{
+
+    NSString *type;
+    if ([cloumn isEqualToString:DBHealthStep]) {
+        type=@"runtime";
+    }else if ([cloumn isEqualToString:DBZuoXiPlan]){
+        type=@"schedule";
+    }else if ([cloumn isEqualToString:DBWatchBook]){
+        type=@"contracts";
+    }
+    return type;
+}
+
+//######--回调代理封装--############
+//sdk是否成功回调(回调数据不在此回到)
+-(void)sendDataResult:(NattySendResult)result showController:(UIViewController*)vc success:(void(^)())success{
+
+    switch (result) {
+        case NattySendResultFaild:
+
+        case NattySendResultOutTime:
+            [JGNattyService showAlertSendDataFaildWithViewContrller:vc];
+            break;
+        case NattySendResultOffLine:
+            [JGNattyService showAlertDeviceOfflineWithViewContrller:vc];
+            break;
+        case NattySendResultSuccess:
+            NSLog(@"-----sdk请求成功-----");
+            if (success) {
+                success();
+            }
+            break;
+        default:
+            break;
+    }
+
+}
+
+
+
+-(void)getDateWithColumnName:(NSString*)columnName deviceId:(NSString*)deviceId resultBlock:(void(^)(NSMutableArray*resultData))resultBlock{
+
+    //还没该手表记录的时候插入一条记录，有则不插入
+    [self insertDataWithDeviceId:deviceId];
+    //该表中没有改字段的时候插入columnName字段，有则不插入
+    [self addColumnToWatchTableWith:columnName];
+
+    __block NSString *str;
+    [self.queue inDatabase:^(FMDatabase *db) {
+        FMResultSet *result=[db executeQuery:@"select * from watch where deviceId=?",deviceId];
+
+        if ([result next]) {
+            str=[result stringForColumn:columnName];
+        }
+        //[result close];
+    }];
+
+    if (str) {//数据库有值 拿出来封装成数组 返回
+        NSData *data=[str dataUsingEncoding:NSUTF8StringEncoding];
+
+        NSArray *a=[NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:nil];
+        resultBlock(a.mutableCopy);
+    }else{
+        //数据库无值，走http请求
+        [self getDataForHttpWithColumnName:columnName IMEI:deviceId success:^(NSMutableArray *data) {//成功 返回data
+            resultBlock(data);
+        } failure:^(NSString *errMsg) {
+            //失败 返回 空array
+            resultBlock([NSMutableArray array]);
+        }];
+
+       // return [NSMutableArray array];
+    }
+}
+
+
+
+
+
+
+@end
