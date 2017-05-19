@@ -8,4 +8,7 @@
 ![image](https://github.com/fa643215594/FQSchedulePlan/Img/123456.gif) 
 
 
+![image](https://github.com/fa643215594/FQSchedulePlan/blob/master/Img/123456.gif)
+
+
 
